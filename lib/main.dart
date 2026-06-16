@@ -1,6 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:sqflite/sqflite.dart';
+import 'package:path/path.dart' as p;
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await DBService.initDatabase();
   runApp(const EduManageApp());
 }
 
@@ -15,9 +21,9 @@ class EduManageApp extends StatelessWidget {
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF1E3A8A), // Deep Navy Blue
+          seedColor: const Color(0xFF1E3A8A),
           primary: const Color(0xFF1E3A8A),
-          secondary: const Color(0xFF10B981), // Emerald Accent
+          secondary: const Color(0xFF10B981),
           surface: Colors.white,
         ),
         fontFamily: 'Roboto',
@@ -34,14 +40,72 @@ class EduManageApp extends StatelessWidget {
   }
 }
 
-// Global data layer mocking local persistence state across screens
-List<Map<String, String>> globalStudentDirectory = [
-  {'name': 'Alex Kioko', 'id': 'BIT/0024/2023', 'course': 'Information Technology', 'email': 'alex.kioko@student.ac.ke'},
-  {'name': 'Jane Muthoni', 'id': 'BIT/0112/2023', 'course': 'Computer Science', 'email': 'jane.muthoni@student.ac.ke'},
-];
+// ============================================================================
+// WEEK 4 PERSISTENCE LAYER: LOCAL SQLITE DATABASE INFRASTRUCTURE
+// ============================================================================
+class DBService {
+  static Database? _db;
+
+  static Future<Database> get database async {
+    if (_db != null) return _db!;
+    _db = await initDatabase();
+    return _db!;
+  }
+
+  static Future<Database> initDatabase() async {
+    String path = p.join(await getDatabasesPath(), 'edumanage_pro.db');
+    return await openDatabase(
+      path,
+      version: 1,
+      onCreate: (db, version) async {
+        await db.execute('''
+          CREATE TABLE Students(
+            id TEXT PRIMARY KEY,
+            name TEXT,
+            course TEXT,
+            email TEXT
+          )
+        ''');
+        // Pre-populate records for testing evaluation
+        await db.insert('Students', {'id': 'BIT/0024/2023', 'name': 'Alex Kioko', 'course': 'Information Technology', 'email': 'alex.kioko@student.ac.ke'});
+        await db.insert('Students', {'id': 'BIT/0112/2023', 'name': 'Jane Muthoni', 'course': 'Computer Science', 'email': 'jane.muthoni@student.ac.ke'});
+      },
+    );
+  }
+
+  // SQLITE CRUD Operations
+  static Future<int> insertStudent(Map<String, String> student) async {
+    final db = await database;
+    return await db.insert('Students', student, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  static Future<List<Map<String, dynamic>>> getAllStudents({String query = ""}) async {
+    final db = await database;
+    if (query.isEmpty) {
+      return await db.query('Students');
+    } else {
+      return await db.query('Students', where: 'name LIKE ? OR id LIKE ?', whereArgs: ['%$query%', '%$query%']);
+    }
+  }
+
+  static Future<int> updateStudent(Map<String, String> student) async {
+    final db = await database;
+    return await db.update('Students', student, where: 'id = ?', whereArgs: [student['id']]);
+  }
+
+  static Future<int> deleteStudent(String id) async {
+    final db = await database;
+    return await db.delete('Students', where: 'id = ?', whereArgs: [id]);
+  }
+
+  static Future<void> clearDatabase() async {
+    final db = await database;
+    await db.delete('Students');
+  }
+}
 
 // ============================================================================
-// SCREEN 1: LOGIN SCREEN (Form Validation & Auth Simulation)
+// SCREEN 1: LOGIN SCREEN (Form Validation & Security Authentication)
 // ============================================================================
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -69,13 +133,6 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   @override
-  void dispose() {
-    _emailController.dispose();
-    _passwordController.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.grey[50],
@@ -88,7 +145,7 @@ class _LoginScreenState extends State<LoginScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Icon(Icons.shield_rounded, size: 85, color: Color(0xFF1E38A)),
+                const Icon(Icons.shield_rounded, size: 85, color: Color(0xFF1E3A8A)),
                 const SizedBox(height: 12),
                 const Text(
                   'Application Administrator',
@@ -111,9 +168,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   validator: (value) {
                     if (value == null || value.isEmpty) return 'Authentication email required';
-                    if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value)) {
-                      return 'Enter a legitimate email';
-                    }
+                    if (!value.contains('@')) return 'Enter a legitimate email';
                     return null;
                   },
                 ),
@@ -132,7 +187,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   validator: (value) {
                     if (value == null || value.isEmpty) return 'Security credentials required';
-                    if (value.length < 6) return 'Password must meet security threshold (>5 chars)';
                     return null;
                   },
                 ),
@@ -144,7 +198,6 @@ class _LoginScreenState extends State<LoginScreen> {
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    elevation: 2,
                   ),
                   child: const Text('Authenticate', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
                 ),
@@ -158,7 +211,7 @@ class _LoginScreenState extends State<LoginScreen> {
 }
 
 // ============================================================================
-// SCREEN 2: MAIN DASHBOARD HUB (Metrics & Navigation Center)
+// SCREEN 2: MAIN DASHBOARD HUB (SQLite Fetch, Delete & Live Filter Search)
 // ============================================================================
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -168,140 +221,75 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  void _refreshData() {
-    setState(() {});
+  List<Map<String, dynamic>> _students = [];
+  final _searchController = TextEditingController();
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshStudentList();
+  }
+
+  Future<void> _refreshStudentList() async {
+    setState(() => _isLoading = true);
+    final data = await DBService.getAllStudents(query: _searchController.text);
+    setState(() {
+      _students = data;
+      _isLoading = false;
+    });
+  }
+
+  void _deleteStudent(String id) async {
+    await DBService.deleteStudent(id);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Record dropped from local SQLite database.'), backgroundColor: Colors.redAccent),
+    );
+    _refreshStudentList();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Dashboard ', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        title: const Text('Dashboard Hub', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         backgroundColor: const Color(0xFF1E3A8A),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh_rounded, color: Colors.white),
-            onPressed: _refreshData,
-          ),
-        ],
-      ),
-      drawer: Drawer(
-        child: ListView(
-          padding: EdgeInsets.zero,
-          children: [
-            const DrawerHeader(
-              decoration: BoxDecoration(color: Color(0xFF1E3A8A)),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.account_circle, size: 50, color: Colors.white),
-                  SizedBox(height: 8),
-                  Text('System Controller', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-                  Text('Nairobi Admin Node', style: TextStyle(color: Colors.white70, fontSize: 12)),
-                ],
-              ),
-            ),
-            ListTile(
-              leading: const Icon(Icons.dashboard, color: Color(0xFF1E3A8A)),
-              title: const Text('Administrative Hub'),
-              onTap: () => Navigator.pop(context),
-            ),
-            ListTile(
-              leading: const Icon(Icons.person_add_alt_1, color: Color(0xFF1E3A8A)),
-              title: const Text('Register New Records'),
-              onTap: () async {
-                Navigator.pop(context);
-                await Navigator.pushNamed(context, '/register');
-                _refreshData();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.auto_stories, color: Color(0xFF1E3A8A)),
-              title: const Text('Course Department Index'),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.pushNamed(context, '/courses');
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.settings_applications, color: Color(0xFF1E3A8A)),
-              title: const Text('Node Settings'),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.pushNamed(context, '/settings');
-              },
-            ),
-            const Divider(),
-            ListTile(
-              leading: const Icon(Icons.logout, color: Colors.redAccent),
-              title: const Text('Terminate Token'),
-              onTap: () => Navigator.pushReplacementNamed(context, '/'),
-            ),
-          ],
-        ),
+        iconTheme: const IconThemeData(color: Colors.white),
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // INTERACTIVE EXPLORE HEADER CARD
-            InkWell(
-              onTap: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('System Integrity Checked: ${globalStudentDirectory.length} active database allocations detected.'),
-                    backgroundColor: const Color(0xFF1E3A8A),
-                  ),
-                );
-              },
-              child: Card(
-                color: const Color(0xFF1E3A8A).withOpacity(0.06),
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  side: const BorderSide(color: Color(0xFF1E3A8A), width: 1.2),
+            // SEARCH FIELD BAR
+            TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                labelText: 'Search Local Registry Database...',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.clear),
+                  onPressed: () {
+                    _searchController.clear();
+                    _refreshStudentList();
+                  },
                 ),
-                child: const Padding(
-                  padding: EdgeInsets.all(16.0),
-                  child: Row(
-                    children: [
-                      Icon(Icons.explore_outlined, color: Color(0xFF1E3A8A), size: 30),
-                      SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Explore System Status Dashboard',
-                              style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1E3A8A)),
-                            ),
-                            Text(
-                              'Click here to process metric status updates instantly.',
-                              style: TextStyle(fontSize: 12, color: Colors.black54),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Color(0xFF1E3A8A)),
-                    ],
-                  ),
-                ),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
               ),
+              onChanged: (value) => _refreshStudentList(),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 16),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  'Enrolled Registry (${globalStudentDirectory.length})',
+                  'Enrolled Registry (${_students.length})',
                   style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1E3A8A)),
                 ),
                 ElevatedButton.icon(
                   onPressed: () async {
                     await Navigator.pushNamed(context, '/register');
-                    _refreshData();
+                    _refreshStudentList();
                   },
                   icon: const Icon(Icons.add, size: 16),
                   label: const Text('Add Record'),
@@ -315,12 +303,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
             const SizedBox(height: 12),
             Expanded(
-              child: globalStudentDirectory.isEmpty
-                  ? const Center(child: Text('Database architecture currently unallocated.'))
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _students.isEmpty
+                  ? const Center(child: Text('No allocations matched search criteria.'))
                   : ListView.builder(
-                itemCount: globalStudentDirectory.length,
+                itemCount: _students.length,
                 itemBuilder: (context, index) {
-                  final item = globalStudentDirectory[index];
+                  final item = _students[index];
                   return Card(
                     elevation: 1.5,
                     margin: const EdgeInsets.only(bottom: 10),
@@ -329,16 +319,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         backgroundColor: const Color(0xFF1E3A8A).withOpacity(0.1),
                         child: const Icon(Icons.badge, color: Color(0xFF1E3A8A)),
                       ),
-                      title: Text(item['name']!, style: const TextStyle(fontWeight: FontWeight.bold)),
+                      title: Text(item['name'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold)),
                       subtitle: Text('${item['id']}\n${item['course']}\n${item['email']}'),
                       isThreeLine: true,
                       trailing: IconButton(
                         icon: const Icon(Icons.delete_sweep, color: Colors.redAccent),
-                        onPressed: () {
-                          setState(() {
-                            globalStudentDirectory.removeAt(index);
-                          });
-                        },
+                        onPressed: () => _deleteStudent(item['id']),
                       ),
                     ),
                   );
@@ -353,15 +339,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
         selectedItemColor: const Color(0xFF1E3A8A),
         unselectedItemColor: Colors.grey,
         onTap: (index) {
-          if (index == 1) {
-            Navigator.pushNamed(context, '/courses');
-          } else if (index == 2) {
-            Navigator.pushNamed(context, '/settings');
-          }
+          if (index == 1) Navigator.pushNamed(context, '/courses');
+          if (index == 2) Navigator.pushNamed(context, '/settings');
         },
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Hub'),
-          BottomNavigationBarItem(icon: Icon(Icons.book), label: 'Courses'),
+          BottomNavigationBarItem(icon: Icon(Icons.public), label: 'API Data'),
           BottomNavigationBarItem(icon: Icon(Icons.settings), label: 'Settings'),
         ],
       ),
@@ -370,7 +353,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 }
 
 // ============================================================================
-// SCREEN 3: STUDENT REGISTRATION FORM (Form Processing & Local Storage Persistence)
+// SCREEN 3: STUDENT REGISTRATION (Form Input Committed directly to SQLite)
 // ============================================================================
 class RegistrationScreen extends StatefulWidget {
   const RegistrationScreen({super.key});
@@ -386,35 +369,24 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   final _emailController = TextEditingController();
   String _selectedCourse = 'Information Technology';
 
-  final List<String> _courses = [
-    'Information Technology',
-    'Computer Science',
-    'Software Engineering',
-    'Business Information Systems'
-  ];
+  final List<String> _courses = ['Information Technology', 'Computer Science', 'Software Engineering', 'Business Information Systems'];
 
-  void _commitRecord() {
+  void _commitRecord() async {
     if (_formKey.currentState!.validate()) {
-      globalStudentDirectory.add({
-        'name': _nameController.text,
+      await DBService.insertStudent({
         'id': _idController.text,
+        'name': _nameController.text,
         'email': _emailController.text,
         'course': _selectedCourse,
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Record committed successfully to local registry state.'), backgroundColor: Colors.green),
-      );
-      Navigator.pop(context);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Record committed successfully to local SQLite Database File!'), backgroundColor: Colors.green),
+        );
+        Navigator.pop(context);
+      }
     }
-  }
-
-  @override
-  void dispose() {
-    _nameController.dispose();
-    _idController.dispose();
-    _emailController.dispose();
-    super.dispose();
   }
 
   @override
@@ -451,7 +423,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                   prefixIcon: const Icon(Icons.fingerprint_rounded),
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                 ),
-                validator: (value) => (value == null || value.isEmpty) ? 'Valid unique identification parameters required' : null,
+                validator: (value) => (value == null || value.isEmpty) ? 'Valid identifier required' : null,
               ),
               const SizedBox(height: 16),
               TextFormField(
@@ -462,11 +434,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                   prefixIcon: const Icon(Icons.alternate_email_rounded),
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                 ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) return 'Student email cannot be empty ! ';
-                  if (!value.contains('@')) return 'Invalid domain layout mapping missing @ symbol';
-                  return null;
-                },
+                validator: (value) => (value == null || !value.contains('@')) ? 'Invalid domain layout mapping missing @ symbol' : null,
               ),
               const SizedBox(height: 16),
               DropdownButtonFormField<String>(
@@ -488,7 +456,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
-                child: const Text('Commit Profiles Offline', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                child: const Text('Commit Profile to DB', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
               ),
             ],
           ),
@@ -499,23 +467,55 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
 }
 
 // ============================================================================
-// SCREEN 4: COURSE EXPLORER (Department Catalog Representation)
+// SCREEN 4: WEEK 5 REST API CONSUMER MODULE (Asynchronous HTTP Networking)
 // ============================================================================
-class CourseExplorerScreen extends StatelessWidget {
+class CourseExplorerScreen extends StatefulWidget {
   const CourseExplorerScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final List<Map<String, String>> departmentCatalog = [
-      {'code': 'BIT 4107', 'title': 'Advanced Mobile Application Development', 'dept': 'IT'},
-      {'code': 'DCS 3201', 'title': 'Object Oriented Programming II', 'dept': 'Computer Science'},
-      {'code': 'BBIT 4205', 'title': 'Database Architecture Management Systems', 'dept': 'Information Systems'},
-      {'code': 'SE 4102', 'title': 'Native Component Mobile Engineering', 'dept': 'Software Engineering'},
-    ];
+  State<CourseExplorerScreen> createState() => _CourseExplorerScreenState();
+}
 
+class _CourseExplorerScreenState extends State<CourseExplorerScreen> {
+  List<dynamic> _apiUsers = [];
+  bool _isNetworkLoading = true;
+  String _networkErrorMsg = "";
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchRemoteUsers();
+  }
+
+  // Week 5 REST API Consumption Implementation
+  Future<void> _fetchRemoteUsers() async {
+    try {
+      final response = await http.get(Uri.parse('https://jsonplaceholder.typicode.com/users')).timeout(const Duration(seconds: 8));
+
+      if (response.statusCode == 200) {
+        setState(() {
+          _apiUsers = json.decode(response.body);
+          _isNetworkLoading = false;
+        });
+      } else {
+        setState(() {
+          _networkErrorMsg = "Server Exception error: Code ${response.statusCode}";
+          _isNetworkLoading = false;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _networkErrorMsg = "Network communication timeout or missing connection channel link.";
+        _isNetworkLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Course Catalogs', style: TextStyle(color: Colors.white)),
+        title: const Text('Live REST API Consumer Matrix', style: TextStyle(color: Colors.white, fontSize: 16)),
         backgroundColor: const Color(0xFF1E3A8A),
         iconTheme: const IconThemeData(color: Colors.white),
       ),
@@ -524,26 +524,28 @@ class CourseExplorerScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Department Course Matrices', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1E3A8A))),
+            const Text('Remote JSON Data Payload (Week 5 Target)', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1E3A8A))),
             const SizedBox(height: 12),
             Expanded(
-              child: ListView.builder(
-                itemCount: departmentCatalog.length,
+              child: _isNetworkLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _networkErrorMsg.isNotEmpty
+                  ? Center(child: Text(_networkErrorMsg, style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold), textAlign: TextAlign.center))
+                  : ListView.builder(
+                itemCount: _apiUsers.length,
                 itemBuilder: (context, index) {
-                  final course = departmentCatalog[index];
+                  final user = _apiUsers[index];
                   return Card(
                     margin: const EdgeInsets.only(bottom: 12),
                     elevation: 2,
                     child: ListTile(
-                      leading: Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(color: const Color(0xFF1E3A8A).withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
-                        child: const Icon(Icons.menu_book_rounded, color: Color(0xFF1E3A8A)),
+                      leading: const CircleAvatar(
+                        backgroundColor: Color(0xFF10B981),
+                        child: Icon(Icons.cloud_download, color: Colors.white, size: 18),
                       ),
-                      title: Text(course['code']!, style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1E3A8A))),
-                      subtitle: Text('${course['title']}\nFaculty: ${course['dept']}'),
+                      title: Text(user['name'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1E3A8A))),
+                      subtitle: Text('Username: ${user['username']}\nEmail: ${user['email']}\nCompany: ${user['company']['name']}'),
                       isThreeLine: true,
-                      trailing: const Icon(Icons.verified_user_rounded, color: Color(0xFF10B981), size: 20),
                     ),
                   );
                 },
@@ -557,7 +559,7 @@ class CourseExplorerScreen extends StatelessWidget {
 }
 
 // ============================================================================
-// SCREEN 5: SETTINGS & SYSTEM CONFIGURATION SCREEN (System Summary)
+// SCREEN 5: SETTINGS & SYSTEM UTILITIES
 // ============================================================================
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -582,46 +584,29 @@ class SettingsScreen extends StatelessWidget {
                 children: [
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [Text('Environment Runtime Framework:', style: TextStyle(fontWeight: FontWeight.w500)), Text('Flutter SDK 2026')],
+                    children: [Text('Environment Runtime Framework:', style: TextStyle(fontWeight: FontWeight.w500)), Text('Flutter SDK Stable')],
                   ),
                   Divider(),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [Text('System Data Target Architecture:', style: TextStyle(fontWeight: FontWeight.w500)), Text('Local State / Memory Map')],
-                  ),
-                  Divider(),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [Text('Operational Node Node Status:', style: TextStyle(fontWeight: FontWeight.w500)), Text('Active Testing Sync', style: TextStyle(color: Color(0xFF10B981), fontWeight: FontWeight.bold))],
+                    children: [Text('System Data Target Architecture:', style: TextStyle(fontWeight: FontWeight.w500)), Text('SQLite RDBMS Storage File')],
                   ),
                 ],
               ),
             ),
           ),
           const SizedBox(height: 20),
-          const Text('Administrative Preferences', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1E3A8A))),
-          const SizedBox(height: 12),
           ListTile(
-            leading: const Icon(Icons.cloud_upload_outlined, color: Color(0xFF1E3A8A)),
-            title: const Text('Simulate Persistent SQLite Export'),
-            subtitle: const Text('Prepares data schemas for offline DB pipelines.'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Schema initialization verified.')),
-              );
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.security_update_good_outlined, color: Color(0xFF1E3A8A)),
-            title: const Text('Clear Active Cached Allocations'),
-            subtitle: const Text('Flushes runtime mock data directory storage structures.'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              globalStudentDirectory.clear();
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Temporary runtime local memory registries dropped.'), backgroundColor: Colors.redAccent),
-              );
+            leading: const Icon(Icons.delete_forever, color: Colors.redAccent),
+            title: const Text('Purge Local Database Rows'),
+            subtitle: const Text('Completely deletes all rows inside SQLite table.'),
+            onTap: () async {
+              await DBService.clearDatabase();
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('All student table rows purged completely!'), backgroundColor: Colors.red),
+                );
+              }
             },
           ),
         ],
