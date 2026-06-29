@@ -29,5 +29,5 @@ The application uses clean, named declarative routing structure to manage state 
 
 1. **Clone the Repository:**
 ```bash
-   git clone [https://github.com/wachiraprince515-sudo/student_management_app.git](https://github.com/wachiraprince515-sudo/student_management_app.git)
-   cd student_management_app
+   git clone [https://github.com/wachiraprince515-sudo/student_managementapp.git](https://github.com/wachiraprince515-sudo/student_management_app.git)
+   cd student_managementapp
