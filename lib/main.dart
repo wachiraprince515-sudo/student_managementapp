@@ -1,9 +1,9 @@
 import 'dart:convert';
-import 'dart:io'; // WEEK 9: Required for handling captured image file objects
+import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:geolocator/geolocator.dart'; // WEEK 9: Native GPS hardware chip processing
+import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
-import 'package:image_picker/image_picker.dart'; // WEEK 9: Native system camera invocation
+import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 
@@ -31,8 +31,10 @@ class EduManageApp extends StatelessWidget {
         ),
         fontFamily: 'Roboto',
       ),
-      initialRoute: '/',
+      // 🎯 WEEK 10 IMPROVEMENT 1: Route to Splash Screen on launch instead of Login
+      initialRoute: '/splash',
       routes: {
+        '/splash': (context) => const SplashScreen(), // New Route
         '/': (context) => const LoginScreen(),
         '/dashboard': (context) => const DashboardScreen(),
         '/register': (context) => const RegistrationScreen(),
@@ -44,7 +46,91 @@ class EduManageApp extends StatelessWidget {
 }
 
 // ============================================================================
-// WEEK 7 PERSISTENCE LAYER: LOCAL SQLITE DATABASE INFRASTRUCTURE
+// 🎯 WEEK 10 FEATURE 1: SPLASH SCREEN (UX & Loading Animation)
+// ============================================================================
+class SplashScreen extends StatefulWidget {
+  const SplashScreen({super.key});
+
+  @override
+  State<SplashScreen> createState() => _SplashScreenState();
+}
+
+class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _fadeAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    );
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(_controller);
+    _controller.forward();
+
+    // Simulate system diagnostic initialization delay before routing to authentication login
+    Future.delayed(const Duration(seconds: 3, milliseconds: 500), () {
+      if (mounted) {
+        Navigator.pushReplacementNamed(context, '/');
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF1E3A8A),
+      body: Center(
+        child: FadeTransition(
+          opacity: _fadeAnimation,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.school_rounded, size: 85, color: Color(0xFF10B981)),
+              ),
+              const SizedBox(height: 24),
+              const Text(
+                'EduManage Pro',
+                style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.white, letterSpacing: 1.2),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'System Core Integration • v1.10.0',
+                style: TextStyle(fontSize: 14, color: Colors.white.withOpacity(0.7), fontWeight: FontWeight.w300),
+              ),
+              const SizedBox(height: 48),
+              // 🎯 WEEK 10 FEATURE 3A: Progress indicator tracking startup state
+              const SizedBox(
+                width: 40,
+                height: 40,
+                child: CircularProgressIndicator(
+                  color: Color(0xFF10B981),
+                  strokeWidth: 3.5,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// SQLITE LOCAL DATABASE LAYER (DBService)
 // ============================================================================
 class DBService {
   static Database? _db;
@@ -69,14 +155,12 @@ class DBService {
             email TEXT
           )
         ''');
-        // Pre-populate records for testing evaluation
         await db.insert('Students', {'id': 'BIT/0024/2023', 'name': 'Alex Kioko', 'course': 'Information Technology', 'email': 'alex.kioko@student.ac.ke'});
         await db.insert('Students', {'id': 'BIT/0112/2023', 'name': 'Jane Muthoni', 'course': 'Computer Science', 'email': 'jane.muthoni@student.ac.ke'});
       },
     );
   }
 
-  // SQLITE CRUD Operations[cite: 2]
   static Future<int> insertStudent(Map<String, String> student) async {
     final db = await database;
     return await db.insert('Students', student, conflictAlgorithm: ConflictAlgorithm.replace);
@@ -91,11 +175,6 @@ class DBService {
     }
   }
 
-  static Future<int> updateStudent(Map<String, String> student) async {
-    final db = await database;
-    return await db.update('Students', student, where: 'id = ?', whereArgs: [student['id']]);
-  }
-
   static Future<int> deleteStudent(String id) async {
     final db = await database;
     return await db.delete('Students', where: 'id = ?', whereArgs: [id]);
@@ -108,7 +187,7 @@ class DBService {
 }
 
 // ============================================================================
-// WEEK 8: LOGIN SCREEN (Form Validation & Keyboard Input Event Classes)
+// SCREEN 1: LOGIN SCREEN
 // ============================================================================
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -127,8 +206,15 @@ class _LoginScreenState extends State<LoginScreen> {
     if (_formKey.currentState!.validate()) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Access Granted. Synchronizing Portal Modules...'),
+          content: Row(
+            children: [
+              Icon(Icons.verified_user, color: Colors.white),
+              SizedBox(width: 12),
+              Text('Access Granted. Synchronizing Portal Modules...'),
+            ],
+          ),
           backgroundColor: Color(0xFF10B981),
+          behavior: SnackBarBehavior.floating,
         ),
       );
       Navigator.pushReplacementNamed(context, '/dashboard');
@@ -213,7 +299,7 @@ class _LoginScreenState extends State<LoginScreen> {
 }
 
 // ============================================================================
-// SCREEN 2: MAIN DASHBOARD HUB (SQLite Fetch, Delete & Live Filter Search)
+// SCREEN 2: MAIN DASHBOARD HUB
 // ============================================================================
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -244,9 +330,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   void _deleteStudent(String id) async {
     await DBService.deleteStudent(id);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Record dropped from local SQLite database.'), backgroundColor: Colors.redAccent),
-    );
+
+    // 🎯 WEEK 10 FEATURE 2A: Upgraded notification context tracking for destructive changes
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Student file ($id) dropped from local instance.'),
+          backgroundColor: Colors.redAccent,
+          behavior: SnackBarBehavior.floating,
+          action: SnackBarAction(label: 'OK', textColor: Colors.white, onPressed: () {}),
+        ),
+      );
+    }
     _refreshStudentList();
   }
 
@@ -304,15 +399,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
             const SizedBox(height: 12),
             Expanded(
+              // 🎯 WEEK 10 FEATURE 3B: Integrated linear progress layout for structural filtering
               child: _isLoading
-                  ? const Center(child: CircularProgressIndicator())
+                  ? const Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 12),
+                    Text('Filtering records...', style: TextStyle(color: Colors.grey)),
+                  ],
+                ),
+              )
                   : _students.isEmpty
                   ? const Center(child: Text('No allocations matched search criteria.'))
                   : ListView.builder(
                 itemCount: _students.length,
                 itemBuilder: (context, index) {
                   final item = _students[index];
-                  // WEEK 8 GESTURE DESIGN: Wrapped inside interactive tap configurations
                   return Card(
                     elevation: 1.5,
                     margin: const EdgeInsets.only(bottom: 10),
@@ -355,7 +459,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 }
 
 // ============================================================================
-// SCREEN 3: STUDENT REGISTRATION & WEEK 9 HARDWARE LAYOUT INCLUSION
+// SCREEN 3: STUDENT REGISTRATION
 // ============================================================================
 class RegistrationScreen extends StatefulWidget {
   const RegistrationScreen({super.key});
@@ -383,10 +487,27 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
       });
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Record committed successfully to local SQLite Database File!'), backgroundColor: Colors.green),
+        // 🎯 WEEK 10 FEATURE 2B: Enhanced Dialog Notification on explicit database commit success
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (BuildContext dialogContext) {
+            return AlertDialog(
+              icon: const Icon(Icons.check_circle_outline_rounded, color: Color(0xFF10B981), size: 54),
+              title: const Text('Record Committed'),
+              content: Text('Profile for ${_nameController.text} has been structurally bound to the SQLite core schema.'),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(dialogContext); // Close Dialog
+                    Navigator.pop(context);       // Return to Hub
+                  },
+                  child: const Text('Return to Hub', style: TextStyle(color: Color(0xFF1E3A8A), fontWeight: FontWeight.bold)),
+                ),
+              ],
+            );
+          },
         );
-        Navigator.pop(context);
       }
     }
   }
@@ -463,7 +584,6 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
 
               const Divider(height: 40, thickness: 1.5),
 
-              // 🎯 WEEK 9 HARDWARE MODULE CALL INTERACTION[cite: 4]
               const HardwareIntegrationModule(),
             ],
           ),
@@ -474,7 +594,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
 }
 
 // ============================================================================
-// SCREEN 4: WEEK 6 REST API CONSUMER MODULE (Asynchronous HTTP Networking)
+// SCREEN 4: REST API CONSUMER MODULE
 // ============================================================================
 class CourseExplorerScreen extends StatefulWidget {
   const CourseExplorerScreen({super.key});
@@ -533,8 +653,18 @@ class _CourseExplorerScreenState extends State<CourseExplorerScreen> {
             const Text('Remote JSON Data Payload (Week 6 Target)', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1E3A8A))),
             const SizedBox(height: 12),
             Expanded(
+              // 🎯 WEEK 10 FEATURE 3C: Full screen loader overlay mapping with intuitive descriptions
               child: _isNetworkLoading
-                  ? const Center(child: CircularProgressIndicator())
+                  ? const Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircularProgressIndicator(color: Color(0xFF1E3A8A)),
+                    SizedBox(height: 16),
+                    Text('Consuming Remote REST Endpoints...', style: TextStyle(fontWeight: FontWeight.w500, color: Colors.grey)),
+                  ],
+                ),
+              )
                   : _networkErrorMsg.isNotEmpty
                   ? Center(child: Text(_networkErrorMsg, style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold), textAlign: TextAlign.center))
                   : ListView.builder(
@@ -622,7 +752,7 @@ class SettingsScreen extends StatelessWidget {
 }
 
 // ============================================================================
-// WEEK 9 CLASS TASK MODULE: DEVICE FEATURES INTEGRATION (CAMERA & GPS LOCATION)[cite: 4]
+// DEVICE FEATURES INTEGRATION (CAMERA & GPS LOCATION)
 // ============================================================================
 class HardwareIntegrationModule extends StatefulWidget {
   const HardwareIntegrationModule({super.key});
@@ -633,10 +763,9 @@ class HardwareIntegrationModule extends StatefulWidget {
 
 class _HardwareIntegrationModuleState extends State<HardwareIntegrationModule> {
   File? _capturedImage;
-  String _gpsCoordinates = "Coordinates: Tap 'Get Location' to request GPS module...[cite: 4]";
+  String _gpsCoordinates = "Coordinates: Tap 'Get Location' to request GPS module...";
   bool _isLoadingLocation = false;
 
-  // Week 9: Capture image feature mapping[cite: 4]
   Future<void> _capturePhoto() async {
     final ImagePicker picker = ImagePicker();
     try {
@@ -646,17 +775,16 @@ class _HardwareIntegrationModuleState extends State<HardwareIntegrationModule> {
           _capturedImage = File(photo.path);
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Photo assets captured successfully via native intent![cite: 4]'), backgroundColor: Colors.green),
+          const SnackBar(content: Text('Photo assets captured successfully via native intent!'), backgroundColor: Colors.green, behavior: SnackBarBehavior.floating),
         );
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Camera error / permission rejection: $e[cite: 4]'), backgroundColor: Colors.redAccent),
+        SnackBar(content: Text('Camera error / permission rejection: $e'), backgroundColor: Colors.redAccent),
       );
     }
   }
 
-  // Week 9: Retrieve user coordinates feature mapping via Fused Location Provider[cite: 4]
   Future<void> _getGPSLocation() async {
     bool serviceEnabled;
     LocationPermission permission;
@@ -666,19 +794,19 @@ class _HardwareIntegrationModuleState extends State<HardwareIntegrationModule> {
     try {
       serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
-        throw 'Hardware location toggle is turned off on device.[cite: 4]';
+        throw 'Hardware location toggle is turned off on device.';
       }
 
       permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
         if (permission == LocationPermission.denied) {
-          throw 'Location permissions denied.[cite: 4]';
+          throw 'Location permissions denied.';
         }
       }
 
       if (permission == LocationPermission.deniedForever) {
-        throw 'Permissions are locked permanently in Android settings.[cite: 4]';
+        throw 'Permissions are locked permanently in Android settings.';
       }
 
       Position position = await Geolocator.getCurrentPosition(
@@ -686,13 +814,13 @@ class _HardwareIntegrationModuleState extends State<HardwareIntegrationModule> {
       );
 
       setState(() {
-        _gpsCoordinates = "Latitude: ${position.latitude.toStringAsFixed(6)}\nLongitude: ${position.longitude.toStringAsFixed(6)}[cite: 4]";
+        _gpsCoordinates = "Latitude: ${position.latitude.toStringAsFixed(6)}\nLongitude: ${position.longitude.toStringAsFixed(6)}";
       });
     } catch (error) {
       setState(() {
         _gpsCoordinates = "Fault: $error";
       });
-    } finally {
+    } fractionally {
       setState(() => _isLoadingLocation = false);
     }
   }
@@ -707,12 +835,10 @@ class _HardwareIntegrationModuleState extends State<HardwareIntegrationModule> {
         child: Column(
           children: [
             const Text(
-              'Smart Campus Explorer Features (Week 9 Tasks)[cite: 4]',
+              'Smart Campus Explorer Features (Week 9 Tasks)',
               style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1E3A8A)),
             ),
             const SizedBox(height: 14),
-
-            // Task 1: ImageView component placeholder[cite: 4]
             Container(
               height: 160,
               width: double.infinity,
@@ -726,25 +852,22 @@ class _HardwareIntegrationModuleState extends State<HardwareIntegrationModule> {
                 borderRadius: BorderRadius.circular(9),
                 child: Image.file(_capturedImage!, fit: BoxFit.cover),
               )
-                  : const Center(child: Text('No campus media captured yet.[cite: 4]', style: TextStyle(color: Colors.grey))),
+                  : const Center(child: Text('No campus media captured yet.', style: TextStyle(color: Colors.grey))),
             ),
             const SizedBox(height: 14),
-
-            // Task 1: TextView coordinate metrics output[cite: 4]
             Text(
               _gpsCoordinates,
               textAlign: TextAlign.center,
               style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500, fontFamily: 'monospace', color: Colors.black87),
             ),
             const SizedBox(height: 14),
-
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
                 ElevatedButton.icon(
                   onPressed: _capturePhoto,
                   icon: const Icon(Icons.photo_camera),
-                  label: const Text('Capture Photo[cite: 4]'),
+                  label: const Text('Capture Photo'),
                   style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1E3A8A), foregroundColor: Colors.white),
                 ),
                 ElevatedButton.icon(
@@ -752,7 +875,7 @@ class _HardwareIntegrationModuleState extends State<HardwareIntegrationModule> {
                   icon: _isLoadingLocation
                       ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                       : const Icon(Icons.my_location),
-                  label: const Text('Get GPS[cite: 4]'),
+                  label: const Text('Get GPS'),
                   style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10B981), foregroundColor: Colors.white),
                 ),
               ],
