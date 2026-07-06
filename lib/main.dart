@@ -1,8 +1,11 @@
-import 'package:flutter/material.dart';
-import 'package:sqflite/sqflite.dart';
-import 'package:path/path.dart' as p;
-import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'dart:io'; // WEEK 9: Required for handling captured image file objects
+import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart'; // WEEK 9: Native GPS hardware chip processing
+import 'package:http/http.dart' as http;
+import 'package:image_picker/image_picker.dart'; // WEEK 9: Native system camera invocation
+import 'package:path/path.dart' as p;
+import 'package:sqflite/sqflite.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -41,7 +44,7 @@ class EduManageApp extends StatelessWidget {
 }
 
 // ============================================================================
-// WEEK 4 PERSISTENCE LAYER: LOCAL SQLITE DATABASE INFRASTRUCTURE
+// WEEK 7 PERSISTENCE LAYER: LOCAL SQLITE DATABASE INFRASTRUCTURE
 // ============================================================================
 class DBService {
   static Database? _db;
@@ -73,7 +76,7 @@ class DBService {
     );
   }
 
-  // SQLITE CRUD Operations
+  // SQLITE CRUD Operations[cite: 2]
   static Future<int> insertStudent(Map<String, String> student) async {
     final db = await database;
     return await db.insert('Students', student, conflictAlgorithm: ConflictAlgorithm.replace);
@@ -105,7 +108,7 @@ class DBService {
 }
 
 // ============================================================================
-// SCREEN 1: LOGIN SCREEN (Form Validation & Security Authentication)
+// WEEK 8: LOGIN SCREEN (Form Validation & Keyboard Input Event Classes)
 // ============================================================================
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -145,15 +148,14 @@ class _LoginScreenState extends State<LoginScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Icon(Icons.shield_rounded, size: 85, color: Color(0xFF1E3A8A)),
                 const SizedBox(height: 12),
                 const Text(
-                  'Application Administrator',
+                  'KIng SYs Administrator',
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Color(0xFF1E3A8A)),
                 ),
                 const Text(
-                  'Secure Student Management System Portal',
+                  'Secure Student Portal',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Colors.grey, fontSize: 13),
                 ),
@@ -261,7 +263,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // SEARCH FIELD BAR
             TextField(
               controller: _searchController,
               decoration: InputDecoration(
@@ -311,6 +312,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 itemCount: _students.length,
                 itemBuilder: (context, index) {
                   final item = _students[index];
+                  // WEEK 8 GESTURE DESIGN: Wrapped inside interactive tap configurations
                   return Card(
                     elevation: 1.5,
                     margin: const EdgeInsets.only(bottom: 10),
@@ -353,7 +355,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 }
 
 // ============================================================================
-// SCREEN 3: STUDENT REGISTRATION (Form Input Committed directly to SQLite)
+// SCREEN 3: STUDENT REGISTRATION & WEEK 9 HARDWARE LAYOUT INCLUSION
 // ============================================================================
 class RegistrationScreen extends StatefulWidget {
   const RegistrationScreen({super.key});
@@ -447,7 +449,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                 items: _courses.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
                 onChanged: (val) => setState(() => _selectedCourse = val!),
               ),
-              const SizedBox(height: 30),
+              const SizedBox(height: 20),
               ElevatedButton(
                 onPressed: _commitRecord,
                 style: ElevatedButton.styleFrom(
@@ -458,6 +460,11 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                 ),
                 child: const Text('Commit Profile to DB', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
               ),
+
+              const Divider(height: 40, thickness: 1.5),
+
+              // 🎯 WEEK 9 HARDWARE MODULE CALL INTERACTION[cite: 4]
+              const HardwareIntegrationModule(),
             ],
           ),
         ),
@@ -467,7 +474,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
 }
 
 // ============================================================================
-// SCREEN 4: WEEK 5 REST API CONSUMER MODULE (Asynchronous HTTP Networking)
+// SCREEN 4: WEEK 6 REST API CONSUMER MODULE (Asynchronous HTTP Networking)
 // ============================================================================
 class CourseExplorerScreen extends StatefulWidget {
   const CourseExplorerScreen({super.key});
@@ -487,7 +494,6 @@ class _CourseExplorerScreenState extends State<CourseExplorerScreen> {
     _fetchRemoteUsers();
   }
 
-  // Week 5 REST API Consumption Implementation
   Future<void> _fetchRemoteUsers() async {
     try {
       final response = await http.get(Uri.parse('https://jsonplaceholder.typicode.com/users')).timeout(const Duration(seconds: 8));
@@ -524,7 +530,7 @@ class _CourseExplorerScreenState extends State<CourseExplorerScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Remote JSON Data Payload (Week 5 Target)', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1E3A8A))),
+            const Text('Remote JSON Data Payload (Week 6 Target)', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1E3A8A))),
             const SizedBox(height: 12),
             Expanded(
               child: _isNetworkLoading
@@ -610,6 +616,149 @@ class SettingsScreen extends StatelessWidget {
             },
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// WEEK 9 CLASS TASK MODULE: DEVICE FEATURES INTEGRATION (CAMERA & GPS LOCATION)[cite: 4]
+// ============================================================================
+class HardwareIntegrationModule extends StatefulWidget {
+  const HardwareIntegrationModule({super.key});
+
+  @override
+  State<HardwareIntegrationModule> createState() => _HardwareIntegrationModuleState();
+}
+
+class _HardwareIntegrationModuleState extends State<HardwareIntegrationModule> {
+  File? _capturedImage;
+  String _gpsCoordinates = "Coordinates: Tap 'Get Location' to request GPS module...[cite: 4]";
+  bool _isLoadingLocation = false;
+
+  // Week 9: Capture image feature mapping[cite: 4]
+  Future<void> _capturePhoto() async {
+    final ImagePicker picker = ImagePicker();
+    try {
+      final XFile? photo = await picker.pickImage(source: ImageSource.camera);
+      if (photo != null) {
+        setState(() {
+          _capturedImage = File(photo.path);
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Photo assets captured successfully via native intent![cite: 4]'), backgroundColor: Colors.green),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Camera error / permission rejection: $e[cite: 4]'), backgroundColor: Colors.redAccent),
+      );
+    }
+  }
+
+  // Week 9: Retrieve user coordinates feature mapping via Fused Location Provider[cite: 4]
+  Future<void> _getGPSLocation() async {
+    bool serviceEnabled;
+    LocationPermission permission;
+
+    setState(() => _isLoadingLocation = true);
+
+    try {
+      serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        throw 'Hardware location toggle is turned off on device.[cite: 4]';
+      }
+
+      permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          throw 'Location permissions denied.[cite: 4]';
+        }
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        throw 'Permissions are locked permanently in Android settings.[cite: 4]';
+      }
+
+      Position position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+      );
+
+      setState(() {
+        _gpsCoordinates = "Latitude: ${position.latitude.toStringAsFixed(6)}\nLongitude: ${position.longitude.toStringAsFixed(6)}[cite: 4]";
+      });
+    } catch (error) {
+      setState(() {
+        _gpsCoordinates = "Fault: $error";
+      });
+    } finally {
+      setState(() => _isLoadingLocation = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            const Text(
+              'Smart Campus Explorer Features (Week 9 Tasks)[cite: 4]',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1E3A8A)),
+            ),
+            const SizedBox(height: 14),
+
+            // Task 1: ImageView component placeholder[cite: 4]
+            Container(
+              height: 160,
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.grey[300]!),
+              ),
+              child: _capturedImage != null
+                  ? ClipRRect(
+                borderRadius: BorderRadius.circular(9),
+                child: Image.file(_capturedImage!, fit: BoxFit.cover),
+              )
+                  : const Center(child: Text('No campus media captured yet.[cite: 4]', style: TextStyle(color: Colors.grey))),
+            ),
+            const SizedBox(height: 14),
+
+            // Task 1: TextView coordinate metrics output[cite: 4]
+            Text(
+              _gpsCoordinates,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500, fontFamily: 'monospace', color: Colors.black87),
+            ),
+            const SizedBox(height: 14),
+
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                ElevatedButton.icon(
+                  onPressed: _capturePhoto,
+                  icon: const Icon(Icons.photo_camera),
+                  label: const Text('Capture Photo[cite: 4]'),
+                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1E3A8A), foregroundColor: Colors.white),
+                ),
+                ElevatedButton.icon(
+                  onPressed: _getGPSLocation,
+                  icon: _isLoadingLocation
+                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      : const Icon(Icons.my_location),
+                  label: const Text('Get GPS[cite: 4]'),
+                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10B981), foregroundColor: Colors.white),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
